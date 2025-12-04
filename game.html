@@ -74,6 +74,9 @@
                         <button class="btn btn-secondary" id="saveBoardBtn">Enregistrer le board</button>
                     </div>
                     <div id="boardPreview" class="cards-preview"></div>
+                    <small style="color: var(--text-light); margin-top: 10px; display: block;">
+                        Format : RT (Roi Trèfle), D7 (Dame 7), AC (As Cœur), VK (Valet Carreau)
+                    </small>
                 </div>
 
                 <!-- Section info partie (joueurs + board) - sobre et minimaliste -->
@@ -480,6 +483,81 @@
             }
         }
 
+        function updateBoardPreviewLive() {
+            const preview = document.getElementById('boardPreview');
+            preview.innerHTML = '';
+            
+            const flopInput = document.getElementById('flopInput');
+            const turnInput = document.getElementById('turnInput');
+            const riverInput = document.getElementById('riverInput');
+            const saveBoardBtn = document.getElementById('saveBoardBtn');
+            
+            let allValid = true;
+            const allCards = [];
+            
+            // Valider le flop
+            const flopText = flopInput.value.trim();
+            if (flopText) {
+                const flopCards = parseCardsText(flopText);
+                if (flopCards.length !== 3) {
+                    flopInput.style.borderColor = '#d32f2f';
+                    allValid = false;
+                } else {
+                    flopInput.style.borderColor = '#14a870';
+                    allCards.push(...flopCards);
+                }
+            } else {
+                flopInput.style.borderColor = '';
+            }
+            
+            // Valider le turn
+            const turnText = turnInput.value.trim();
+            if (turnText) {
+                const turnCards = parseCardsText(turnText);
+                if (turnCards.length !== 1) {
+                    turnInput.style.borderColor = '#d32f2f';
+                    allValid = false;
+                } else {
+                    turnInput.style.borderColor = '#14a870';
+                    allCards.push(...turnCards);
+                }
+            } else {
+                turnInput.style.borderColor = '';
+            }
+            
+            // Valider la river
+            const riverText = riverInput.value.trim();
+            if (riverText) {
+                const riverCards = parseCardsText(riverText);
+                if (riverCards.length !== 1) {
+                    riverInput.style.borderColor = '#d32f2f';
+                    allValid = false;
+                } else {
+                    riverInput.style.borderColor = '#14a870';
+                    allCards.push(...riverCards);
+                }
+            } else {
+                riverInput.style.borderColor = '';
+            }
+            
+            // Désactiver le bouton si les cartes ne sont pas valides
+            saveBoardBtn.disabled = !allValid || (flopText === '' && turnText === '' && riverText === '');
+            
+            // Afficher la prévisualisation des cartes
+            if (allCards.length > 0) {
+                preview.style.display = 'flex';
+                allCards.forEach(card => {
+                    const cardEl = createCardElement(card);
+                    if (cardEl) {
+                        cardEl.className = (cardEl.className ? cardEl.className + ' ' : '') + 'preview-card';
+                        preview.appendChild(cardEl);
+                    }
+                });
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
         // Sauvegarder les cartes
         document.getElementById('saveCardsBtn').addEventListener('click', async function() {
             const cardsText = document.getElementById('cardsInput').value.trim();
@@ -532,10 +610,20 @@
             const turnText = document.getElementById('turnInput').value.trim();
             const riverText = document.getElementById('riverInput').value.trim();
 
+            // Vérifier qu'au moins le flop est renseigné
+            if (!flopText) {
+                showAlert('Vous devez au minimum renseigner le flop (3 cartes)', 'error');
+                return;
+            }
+
             const flop = parseCardsText(flopText);
             
-            if (flop.length !== 3 && flopText) {
-                showAlert('Le flop doit contenir 3 cartes', 'error');
+            if (flop.length !== 3) {
+                if (flop.length === 0) {
+                    showAlert('❌ Le flop contient des cartes invalides. Utilisez le format : AC RT D7', 'error');
+                } else {
+                    showAlert(`❌ Le flop doit contenir exactement 3 cartes (vous en avez ${flop.length})`, 'error');
+                }
                 return;
             }
 
@@ -545,7 +633,11 @@
             if (turnText) {
                 const turnCards = parseCardsText(turnText);
                 if (turnCards.length !== 1) {
-                    showAlert('Le turn doit contenir 1 carte', 'error');
+                    if (turnCards.length === 0) {
+                        showAlert('❌ Le turn contient une carte invalide. Utilisez le format : AC', 'error');
+                    } else {
+                        showAlert('❌ Le turn doit contenir exactement 1 carte', 'error');
+                    }
                     return;
                 }
                 turn = turnCards[0];
@@ -554,7 +646,11 @@
             if (riverText) {
                 const riverCards = parseCardsText(riverText);
                 if (riverCards.length !== 1) {
-                    showAlert('La river doit contenir 1 carte', 'error');
+                    if (riverCards.length === 0) {
+                        showAlert('❌ La river contient une carte invalide. Utilisez le format : AC', 'error');
+                    } else {
+                        showAlert('❌ La river doit contenir exactement 1 carte', 'error');
+                    }
                     return;
                 }
                 river = riverCards[0];
@@ -661,6 +757,21 @@
         document.getElementById('cardsInput').addEventListener('input', function() {
             const cards = parseCardsText(this.value);
             updateCardsPreview(cards);
+        });
+
+        // Prévisualiser le flop en temps réel
+        document.getElementById('flopInput').addEventListener('input', function() {
+            updateBoardPreviewLive();
+        });
+
+        // Prévisualiser le turn en temps réel
+        document.getElementById('turnInput').addEventListener('input', function() {
+            updateBoardPreviewLive();
+        });
+
+        // Prévisualiser la river en temps réel
+        document.getElementById('riverInput').addEventListener('input', function() {
+            updateBoardPreviewLive();
         });
 
         // Initialiser au chargement
