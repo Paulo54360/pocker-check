@@ -289,7 +289,14 @@
             const newHandSection = document.getElementById('newHandSection');
             const finishGameSection = document.getElementById('finishGameSection');
             
+            console.log('🔍 checkAndShowNewHandButton appelée', {
+                isCreator,
+                gameStatus: currentGame?.status,
+                currentHandNumber: currentGame?.currentHand
+            });
+            
             if (!isCreator || !currentGame || currentGame.status === 'finished') {
+                console.log('❌ Conditions non remplies pour afficher le bouton');
                 newHandSection.style.display = 'none';
                 if (!isCreator || !currentGame || currentGame.status === 'finished') {
                     finishGameSection.style.display = 'none';
@@ -301,22 +308,50 @@
             finishGameSection.style.display = 'flex';
             
             if (!currentHand) {
+                console.log('❌ currentHand introuvable');
+                newHandSection.style.display = 'none';
+                return;
+            }
+            
+            // Recharger currentHand depuis currentGame pour être sûr d'avoir les dernières données
+            const freshHand = currentGame.hands.find(h => h.handNumber === currentGame.currentHand);
+            
+            if (!freshHand) {
+                console.log('❌ freshHand introuvable');
                 newHandSection.style.display = 'none';
                 return;
             }
             
             // Vérifier si le créateur a enregistré ses cartes
-            const playerData = currentHand.playerData && currentHand.playerData[currentPlayer.playerId];
+            const playerData = freshHand.playerData && freshHand.playerData[currentPlayer.playerId];
             const hasCards = playerData && playerData.cards && Array.isArray(playerData.cards) && playerData.cards.length === 2;
             
+            console.log('🃏 Cartes du créateur:', {
+                playerData,
+                hasCards,
+                cardsLength: playerData?.cards?.length
+            });
+            
             // Vérifier si le board est enregistré (au moins le flop avec 3 cartes)
-            const board = currentHand.board;
+            const board = freshHand.board;
             const hasBoard = board && board.flop && Array.isArray(board.flop) && board.flop.length >= 3;
+            
+            console.log('🎴 Board:', {
+                board,
+                hasBoard,
+                flopLength: board?.flop?.length
+            });
             
             // Afficher le bouton "Nouvelle manche" si les cartes ET le board sont enregistrés
             if (hasCards && hasBoard) {
+                console.log('✅ Conditions remplies ! Affichage du bouton Nouvelle manche');
                 newHandSection.style.display = 'flex';
             } else {
+                console.log('❌ Conditions non remplies pour afficher le bouton', {
+                    hasCards,
+                    hasBoard,
+                    manque: !hasCards ? 'cartes' : 'board'
+                });
                 newHandSection.style.display = 'none';
             }
         }
@@ -474,6 +509,9 @@
                 // Recharger le jeu pour mettre à jour l'état
                 await loadGame();
                 
+                // Attendre que tout soit bien chargé
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
                 // Mettre à jour l'affichage des joueurs et du board
                 renderGameStatus();
                 
@@ -546,9 +584,10 @@
                 renderGameStatus();
                 
                 // Attendre un peu pour que currentHand soit bien mis à jour
-                setTimeout(() => {
+                setTimeout(async () => {
+                    await loadGame(); // Forcer un reload
                     checkAndShowNewHandButton();
-                }, 100);
+                }, 200);
             } else {
                 showAlert('Erreur lors de l\'enregistrement', 'error');
                 this.disabled = false;
