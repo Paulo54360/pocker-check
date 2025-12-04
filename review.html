@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Récapitulatif - Poker Check</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container review-container">
+        <header class="header">
+            <h1 class="logo">🃏 Récapitulatif de la partie</h1>
+            <div style="margin-top: 15px; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                <a href="game.html" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 8px;">← Retour au jeu</a>
+                <a href="index.html" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 8px;">🏠 Accueil</a>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div id="gameInfo" style="background: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px var(--shadow);">
+                <div class="game-code-badge" id="gameCodeBadge" style="display: inline-block;"></div>
+                <p style="color: var(--text-light); margin-top: 10px;">
+                    Créée le <span id="gameDate"></span>
+                </p>
+            </div>
+
+            <!-- Sélecteur de manche -->
+            <div class="hand-navigation" id="handSelector" style="display: none;">
+                <div class="hand-indicator">
+                    <span class="hand-badge" id="currentHandBadge">Manche 1</span>
+                </div>
+                <div class="hand-selector" id="handTabs"></div>
+            </div>
+
+            <!-- Board -->
+            <div class="board-section">
+                <h3 class="section-title">Board</h3>
+                <div class="board-cards" id="boardCards"></div>
+            </div>
+
+            <!-- Liste des joueurs -->
+            <div id="playersReview"></div>
+
+            <!-- Message si partie non terminée -->
+            <div id="notFinishedMessage" style="display: none;">
+                <div class="alert alert-info">
+                    La partie n'est pas encore terminée. Les cartes des autres joueurs seront révélées à la fin.
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Analysez vos coups et progressez ensemble</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        let currentPlayer = null;
+        let currentGame = null;
+        let currentHandNumber = 1;
+        let allHands = [];
+
+        async function init() {
+            currentPlayer = getCurrentPlayer();
+            
+            if (!currentPlayer.gameCode) {
+                showAlert('Session expirée. Veuillez rejoindre une partie.', 'error');
+                setTimeout(() => window.location.href = 'index.html', 2000);
+                return;
+            }
+
+            await loadGame();
+        }
+
+        async function loadGame() {
+            currentGame = await getGame(currentPlayer.gameCode);
+            
+            if (!currentGame) {
+                showAlert('Partie introuvable', 'error');
+                return;
+            }
+
+            // Migrer vers le nouveau format si nécessaire
+            const migratedGame = migrateGameToHandsFormat(currentGame);
+            currentGame = migratedGame;
+
+            allHands = currentGame.hands || [];
+            if (allHands.length > 0) {
+                currentHandNumber = allHands.length; // Afficher la dernière manche par défaut
+            }
+
+            document.getElementById('gameCodeBadge').textContent = `Code: ${currentGame.gameCode}`;
+            document.getElementById('gameDate').textContent = formatDate(currentGame.createdAt);
+
+            renderHandSelector();
+            renderCurrentHand();
+
+            if (currentGame.status !== 'finished') {
+                document.getElementById('notFinishedMessage').style.display = 'block';
+            }
+        }
+
+        function renderHandSelector() {
+            if (allHands.length <= 1) {
+                document.getElementById('handSelector').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('handSelector').style.display = 'flex';
+            const tabsContainer = document.getElementById('handTabs');
+            tabsContainer.innerHTML = '';
+
+            allHands.forEach((hand, index) => {
+                const tab = document.createElement('button');
+                tab.className = `hand-tab ${hand.status === 'finished' ? 'finished' : ''} ${hand.handNumber === currentHandNumber ? 'active' : ''}`;
+                tab.textContent = `Manche ${hand.handNumber}`;
+                tab.addEventListener('click', () => {
+                    currentHandNumber = hand.handNumber;
+                    renderHandSelector();
+                    renderCurrentHand();
+                });
+                tabsContainer.appendChild(tab);
+            });
+
+            const currentHand = allHands.find(h => h.handNumber === currentHandNumber);
+            if (currentHand) {
+                document.getElementById('currentHandBadge').textContent = `Manche ${currentHandNumber}/${allHands.length}`;
+            }
+        }
+
+        function renderCurrentHand() {
+            const currentHand = allHands.find(h => h.handNumber === currentHandNumber);
+            if (!currentHand) return;
+
+            renderBoard(currentHand);
+            renderPlayers(currentHand);
+        }
+
+        function renderBoard(hand) {
+            const boardContainer = document.getElementById('boardCards');
+            boardContainer.innerHTML = '';
+
+            if (!hand || !hand.board) {
+                boardContainer.innerHTML = '<p style="color: var(--text-light);">Aucune carte du board</p>';
+                return;
+            }
+
+            const board = hand.board;
+
+            // Flop
+            if (board.flop && board.flop.length > 0) {
+                board.flop.forEach(card => {
+                    const cardEl = createCardElement(card);
+                    if (cardEl) {
+                        boardContainer.appendChild(cardEl);
+                    }
+                });
+            }
+
+            // Turn
+            if (board.turn) {
+                const cardEl = createCardElement(board.turn);
+                if (cardEl) {
+                    boardContainer.appendChild(cardEl);
+                }
+            }
+
+            // River
+            if (board.river) {
+                const cardEl = createCardElement(board.river);
+                if (cardEl) {
+                    boardContainer.appendChild(cardEl);
+                }
+            }
+
+            if (boardContainer.children.length === 0) {
+                boardContainer.innerHTML = '<p style="color: var(--text-light);">Aucune carte du board</p>';
+            }
+        }
+
+        function renderPlayers(hand) {
+            if (!hand) return;
+            
+            const container = document.getElementById('playersReview');
+            container.innerHTML = '';
+
+            currentGame.players.forEach(player => {
+                const card = document.createElement('div');
+                card.className = 'player-review-card';
+                
+                const isCurrentPlayer = currentPlayer.playerId === player.id;
+                const showCards = hand.status === 'finished' || isCurrentPlayer;
+                
+                // Récupérer les données du joueur pour cette manche
+                const playerData = hand.playerData && hand.playerData[player.id];
+                const playerCards = playerData ? playerData.cards : [];
+                const playerActions = playerData ? playerData.actions : [];
+
+                card.innerHTML = `
+                    <div class="player-review-header">
+                        <div>
+                            <h3 class="player-review-name">
+                                ${player.pseudo}
+                                ${player.isCreator ? '<span style="font-size: 0.8rem; color: var(--text-light);"> (Créateur)</span>' : ''}
+                                ${isCurrentPlayer ? '<span style="font-size: 0.8rem; color: var(--primary-green);"> (Vous)</span>' : ''}
+                            </h3>
+                        </div>
+                    </div>
+
+                    ${showCards && playerCards && playerCards.length > 0 ? `
+                        <div class="player-cards-display" id="cards-${player.id}"></div>
+                    ` : `
+                        <p style="color: var(--text-light);">${isCurrentPlayer ? 'Vous n\'avez pas encore enregistré vos cartes' : 'Cartes non révélées'}</p>
+                    `}
+
+                    ${playerActions && playerActions.length > 0 ? `
+                        <div class="player-actions-timeline">
+                            <h4 style="margin-bottom: 15px;">Actions</h4>
+                            <div id="actions-${player.id}"></div>
+                        </div>
+                    ` : `
+                        <p style="color: var(--text-light); margin-top: 20px;">Aucune action enregistrée</p>
+                    `}
+
+                    <div class="comments-section">
+                        <h4 style="margin-bottom: 15px;">Commentaires</h4>
+                        <textarea 
+                            class="comment-input" 
+                            id="comment-${player.id}" 
+                            placeholder="Ajoutez un commentaire ou une annotation sur ce joueur..."
+                            rows="3"
+                        ></textarea>
+                        <button class="btn" onclick="addCommentToPlayer('${player.id}')">Ajouter un commentaire</button>
+                        <div class="comments-list" id="comments-${player.id}"></div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+
+                // Rendre les cartes
+                if (showCards && playerCards && playerCards.length > 0) {
+                    const cardsContainer = document.getElementById(`cards-${player.id}`);
+                    playerCards.forEach(cardData => {
+                        const cardEl = createCardElement(cardData);
+                        if (cardEl) {
+                            cardEl.style.width = '100px';
+                            cardsContainer.appendChild(cardEl);
+                        }
+                    });
+                }
+
+                // Rendre les actions
+                if (playerActions && playerActions.length > 0) {
+                    const actionsContainer = document.getElementById(`actions-${player.id}`);
+                    playerActions.forEach(action => {
+                        const item = document.createElement('div');
+                        item.className = 'timeline-item';
+                        
+                        let text = action.type.charAt(0).toUpperCase() + action.type.slice(1);
+                        if (action.amount) {
+                            text += ` - ${action.amount}€`;
+                        }
+                        text += ` (${formatDate(action.timestamp)})`;
+                        
+                        item.textContent = text;
+                        actionsContainer.appendChild(item);
+                    });
+                }
+
+                // Rendre les commentaires existants
+                if (player.comments && player.comments.length > 0) {
+                    renderComments(player.id, player.comments);
+                }
+            });
+        }
+
+        async function addCommentToPlayer(targetPlayerId) {
+            const textarea = document.getElementById(`comment-${targetPlayerId}`);
+            const comment = textarea.value.trim();
+
+            if (!comment) {
+                showAlert('Veuillez écrire un commentaire', 'error');
+                return;
+            }
+
+            if (!currentPlayer.pseudo) {
+                showAlert('Erreur: pseudo introuvable', 'error');
+                return;
+            }
+
+            const result = await addComment(currentPlayer.gameCode, targetPlayerId, currentPlayer.pseudo, comment);
+
+            if (result.success) {
+                showAlert('Commentaire ajouté !', 'success');
+                textarea.value = '';
+                await loadGame();
+            } else {
+                showAlert('Erreur lors de l\'ajout du commentaire', 'error');
+            }
+        }
+
+        function renderComments(playerId, comments) {
+            const container = document.getElementById(`comments-${playerId}`);
+            container.innerHTML = '';
+
+            comments.forEach(comment => {
+                const item = document.createElement('div');
+                item.className = 'comment-item';
+                
+                item.innerHTML = `
+                    <div class="comment-author">${comment.author}</div>
+                    <div class="comment-text">${comment.text}</div>
+                    <div style="font-size: 0.85rem; color: var(--text-light); margin-top: 5px;">
+                        ${formatDate(comment.timestamp)}
+                    </div>
+                `;
+                
+                container.appendChild(item);
+            });
+        }
+
+        // Auto-refresh toutes les 10 secondes
+        setInterval(loadGame, 10000);
+
+        // Initialiser au chargement
+        init();
+    </script>
+</body>
+</html>
+

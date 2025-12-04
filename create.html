@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Créer une partie - Poker Check</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="logo">🃏 Poker Check</h1>
+            <a href="index.html" style="color: white; text-decoration: none; margin-top: 10px; display: inline-block;">← Retour</a>
+        </header>
+
+        <main class="main-content">
+            <div class="form-container">
+                <h2 style="color: var(--primary-green); margin-bottom: 30px; text-align: center;">Créer une nouvelle partie</h2>
+                <p style="text-align: center; color: var(--text-light); margin-bottom: 25px;">
+                    Connecté en tant que : <strong id="currentUserPseudo"></strong>
+                </p>
+
+                <button class="btn" id="createBtn">Créer la partie</button>
+
+                <div id="codeSection" style="display: none;">
+                    <div class="code-display">
+                        <div class="code-label">Code de la partie</div>
+                        <div class="code-value" id="gameCode"></div>
+                        <button class="copy-btn" id="copyBtn">📋 Copier le code</button>
+                    </div>
+
+                    <div class="alert alert-info" id="infoAlert" style="display: none;"></div>
+
+                    <div style="text-align: center; margin-top: 30px;">
+                        <a href="game.html" class="btn" id="joinBtn" style="display: none;">Rejoindre la partie</a>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Partagez le code avec vos amis pour qu'ils rejoignent</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        let generatedCode = null;
+        let currentUser = null;
+
+        // Vérifier si l'utilisateur est connecté
+        function init() {
+            currentUser = getCurrentUser();
+            
+            if (!currentUser) {
+                showAlert('Veuillez vous connecter pour créer une partie', 'error');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 2000);
+                return;
+            }
+
+            document.getElementById('currentUserPseudo').textContent = currentUser.pseudo;
+        }
+
+        document.getElementById('createBtn').addEventListener('click', async function() {
+            if (!currentUser) {
+                showAlert('Veuillez vous connecter', 'error');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Création...';
+
+            // Générer le code
+            generatedCode = generateGameCode();
+
+            // Créer la partie avec l'userId
+            const result = await createGame(generatedCode, currentUser.userId);
+
+            if (result.success) {
+                // Afficher le code
+                document.getElementById('gameCode').textContent = generatedCode;
+                document.getElementById('codeSection').style.display = 'block';
+                document.getElementById('infoAlert').style.display = 'block';
+                document.getElementById('infoAlert').textContent = 'Partie créée avec succès ! Partagez le code ci-dessus.';
+
+                // Trouver le playerId du créateur
+                const creatorPlayer = result.gameData.players.find(p => p.userId === currentUser.userId);
+                if (creatorPlayer) {
+                    saveCurrentPlayer(generatedCode, creatorPlayer.id, currentUser.pseudo);
+                }
+
+                // Afficher le bouton pour rejoindre
+                document.getElementById('joinBtn').style.display = 'inline-block';
+                
+                // Scroll vers le code
+                document.getElementById('codeSection').scrollIntoView({ behavior: 'smooth' });
+            } else {
+                showAlert(result.error || 'Erreur lors de la création de la partie', 'error');
+                this.disabled = false;
+                this.textContent = 'Créer la partie';
+            }
+        });
+        
+        init();
+
+        document.getElementById('copyBtn').addEventListener('click', function() {
+            const code = document.getElementById('gameCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                this.textContent = '✓ Copié !';
+                setTimeout(() => {
+                    this.textContent = '📋 Copier le code';
+                }, 2000);
+            }).catch(() => {
+                showAlert('Impossible de copier le code', 'error');
+            });
+        });
+    </script>
+</body>
+</html>
+

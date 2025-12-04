@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rejoindre une partie - Poker Check</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="logo">🃏 Poker Check</h1>
+            <a href="index.html" style="color: white; text-decoration: none; margin-top: 10px; display: inline-block;">← Retour</a>
+        </header>
+
+        <main class="main-content">
+            <div class="form-container">
+                <h2 style="color: var(--primary-green); margin-bottom: 30px; text-align: center;">Rejoindre une partie</h2>
+                
+                <div class="form-group">
+                    <label for="gameCode">Code de la partie</label>
+                    <input type="text" id="gameCode" placeholder="Ex: ABC123" maxlength="6" style="text-transform: uppercase; letter-spacing: 3px; text-align: center; font-size: 1.2rem; font-weight: bold;" required>
+                    <small style="color: var(--text-light); font-size: 0.85rem;">Demandez le code au créateur de la partie</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="pseudo">Votre pseudo</label>
+                    <input type="text" id="pseudo" placeholder="Ex: PokerMaster" maxlength="20" required>
+                    <small id="pseudoError" style="color: var(--card-red); display: none;"></small>
+                </div>
+
+                <button class="btn" id="joinBtn">Rejoindre</button>
+
+                <div id="errorMessage" style="display: none;"></div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Entrez le code de la partie pour y participer</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('gameCode').addEventListener('input', function(e) {
+            this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        });
+
+        // Synchroniser les parties depuis JSONBin avant de joindre
+        async function syncBeforeJoin() {
+            if (JSONBIN_API_KEY && JSONBIN_API_KEY !== 'YOUR_JSONBIN_API_KEY') {
+                await syncGamesFromJSONBin();
+            }
+        }
+
+        document.getElementById('joinBtn').addEventListener('click', async function() {
+            const gameCode = document.getElementById('gameCode').value.trim().toUpperCase();
+            const pseudo = document.getElementById('pseudo').value.trim();
+            const errorEl = document.getElementById('pseudoError');
+
+            errorEl.style.display = 'none';
+
+            if (!gameCode || gameCode.length !== 6) {
+                showAlert('Le code doit faire 6 caractères', 'error');
+                return;
+            }
+
+            if (!pseudo || pseudo.length < 2) {
+                errorEl.textContent = 'Le pseudo doit faire au moins 2 caractères';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Connexion...';
+
+            // Synchroniser depuis JSONBin avant de chercher la partie
+            await syncBeforeJoin();
+
+            // Créer ou récupérer l'utilisateur
+            let user = getUserByPseudo(pseudo);
+            
+            if (!user) {
+                // Vérifier si le pseudo existe déjà
+                if (pseudoExists(pseudo)) {
+                    errorEl.textContent = 'Ce pseudo existe déjà. Veuillez vous connecter depuis la page d\'accueil.';
+                    errorEl.style.display = 'block';
+                    this.disabled = false;
+                    this.textContent = 'Rejoindre';
+                    return;
+                }
+                
+                // Créer un nouvel utilisateur
+                const createResult = createOrGetUser(pseudo);
+                if (!createResult.success) {
+                    errorEl.textContent = createResult.error || 'Erreur lors de la création du compte';
+                    errorEl.style.display = 'block';
+                    this.disabled = false;
+                    this.textContent = 'Rejoindre';
+                    return;
+                }
+                user = createResult.user;
+            }
+
+            // Rejoindre la partie
+            const result = await joinGame(gameCode, user.userId);
+
+            if (result.success) {
+                // Sauvegarder l'utilisateur courant
+                setCurrentUser(user.userId);
+                
+                // Sauvegarder les infos du joueur
+                saveCurrentPlayer(gameCode, result.playerId, user.pseudo);
+                
+                showAlert('Partie rejointe avec succès !', 'success');
+                
+                // Rediriger vers la page de jeu
+                setTimeout(() => {
+                    window.location.href = 'game.html';
+                }, 1000);
+            } else {
+                let errorMessage = result.error || 'Erreur lors de la connexion';
+                
+                // Si la partie n'est pas trouvée, message simple
+                if (errorMessage.includes('Partie introuvable')) {
+                    errorMessage += '\n\n💡 Vérifiez que le code de partie est correct et que la partie existe bien.';
+                }
+                
+                showAlert(errorMessage, 'error');
+                this.disabled = false;
+                this.textContent = 'Rejoindre';
+            }
+        });
+
+        // Permettre de valider avec Entrée
+        document.getElementById('pseudo').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('joinBtn').click();
+            }
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Partie en cours - Poker Check</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="game-header">
+            <div class="game-info">
+                <div class="game-code-badge" id="gameCodeBadge"></div>
+                <div class="player-name" id="playerName"></div>
+                <div id="playersInHeader" style="color: var(--text-light); font-size: 0.9rem; margin-top: 5px;"></div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-secondary" onclick="window.location.href='index.html'">🏠 Accueil</button>
+                <button class="btn btn-danger" id="deleteGameBtn" style="display: none;" onclick="deleteGameFromGamePage()">🗑️ Supprimer</button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Navigation des manches -->
+            <div class="hand-navigation">
+                <div class="hand-indicator">
+                    <span class="hand-badge" id="handBadge">Manche 1</span>
+                    <span id="handStatus"></span>
+                </div>
+                <div id="newHandSection" style="display: none;">
+                    <button class="btn" id="newHandBtn" style="width: auto; padding: 12px 25px; font-size: 1rem;">Nouvelle manche</button>
+                </div>
+                <div id="finishGameSection" style="display: none;">
+                    <button class="btn btn-danger" id="finishGameBtn" style="width: auto; padding: 12px 25px; font-size: 1rem;">Terminer la partie</button>
+                </div>
+            </div>
+
+            <!-- Interface simple de saisie -->
+            <div class="simple-game-interface">
+                <div class="cards-input-section">
+                    <h3 class="section-title">Mes cartes</h3>
+                    <p style="color: var(--text-light); margin-bottom: 15px; font-size: 0.9rem;">
+                        Entrez vos 2 cartes (ex: RT D7 pour Roi Trèfle et Dame 7)
+                    </p>
+                    <div class="cards-input-group">
+                        <input type="text" id="cardsInput" placeholder="Ex: RT D7" class="cards-input">
+                        <button class="btn" id="saveCardsBtn">Valider mes cartes</button>
+                    </div>
+                    <div id="cardsPreview" class="cards-preview"></div>
+                    <small style="color: var(--text-light); margin-top: 10px; display: block;">
+                        Format : RT (Roi Trèfle), D7 (Dame 7), AC (As Cœur), VK (Valet Carreau)
+                    </small>
+                </div>
+
+                <!-- Board pour le créateur -->
+                <div id="boardSection" class="board-input-section" style="display: none;">
+                    <h3 class="section-title">Board</h3>
+                    <p style="color: var(--text-light); margin-bottom: 15px; font-size: 0.9rem;">
+                        Entrez les cartes du board (Flop: 3 cartes, Turn: 1 carte, River: 1 carte)
+                    </p>
+                    <div class="board-input-group">
+                        <div class="board-input-row">
+                            <label>Flop (3 cartes)</label>
+                            <input type="text" id="flopInput" placeholder="Ex: RT D7 AC" class="cards-input">
+                        </div>
+                        <div class="board-input-row">
+                            <label>Turn (1 carte)</label>
+                            <input type="text" id="turnInput" placeholder="Ex: VK" class="cards-input">
+                        </div>
+                        <div class="board-input-row">
+                            <label>River (1 carte)</label>
+                            <input type="text" id="riverInput" placeholder="Ex: 2P" class="cards-input">
+                        </div>
+                        <button class="btn btn-secondary" id="saveBoardBtn">Enregistrer le board</button>
+                    </div>
+                    <div id="boardPreview" class="cards-preview"></div>
+                </div>
+
+                <!-- Section info partie (joueurs + board) - sobre et minimaliste -->
+                <div class="game-status-section">
+                    <!-- Joueurs -->
+                    <div id="playersStatus" class="players-status">
+                        <h4 class="status-title">Joueurs</h4>
+                        <div id="playersStatusList" class="players-status-list">
+                            <!-- Les joueurs seront affichés ici -->
+                        </div>
+                    </div>
+                    
+                    <!-- Board -->
+                    <div id="boardStatus" class="board-status" style="display: none;">
+                        <h4 class="status-title">Board</h4>
+                        <div id="boardStatusCards" class="board-status-cards">
+                            <!-- Le board sera affiché ici -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        let currentPlayer = null;
+        let currentGame = null;
+        let currentHand = null;
+        let isCreator = false;
+
+        // Initialisation
+        async function init() {
+            currentPlayer = getCurrentPlayer();
+            
+            if (!currentPlayer.gameCode || !currentPlayer.playerId) {
+                showAlert('Session expirée. Veuillez rejoindre une partie.', 'error');
+                setTimeout(() => window.location.href = 'index.html', 2000);
+                return;
+            }
+
+            document.getElementById('gameCodeBadge').textContent = `Code: ${currentPlayer.gameCode}`;
+            document.getElementById('playerName').textContent = currentPlayer.pseudo;
+
+            await loadGame();
+            
+            // Auto-refresh toutes les 5 secondes
+            setInterval(loadGame, 5000);
+        }
+
+        async function loadGame() {
+            currentGame = await getGame(currentPlayer.gameCode);
+            
+            if (!currentGame) {
+                showAlert('Partie introuvable', 'error');
+                return;
+            }
+
+            // Migrer vers le nouveau format si nécessaire
+            const migratedGame = migrateGameToHandsFormat(currentGame);
+            currentGame = migratedGame;
+
+            // Vérifier si c'est le créateur
+            const currentUser = getCurrentUser();
+            isCreator = currentGame.creatorId && currentUser && currentGame.creatorId === currentUser.userId;
+
+            // Charger la manche courante
+            const currentHandNum = currentGame.currentHand || 1;
+            currentHand = currentGame.hands.find(h => h.handNumber === currentHandNum);
+            
+            if (!currentHand) {
+                showAlert('Manche introuvable', 'error');
+                return;
+            }
+
+            renderHandNavigation();
+            loadPlayerData();
+            renderBoardSection();
+            renderPlayersInHeader();
+            renderGameStatus();
+            
+            // S'assurer que le bouton "Terminer la partie" s'affiche pour le créateur
+            if (isCreator && currentGame.status !== 'finished') {
+                document.getElementById('finishGameSection').style.display = 'flex';
+            }
+            
+            // Afficher le bouton de suppression pour le créateur
+            if (isCreator) {
+                document.getElementById('deleteGameBtn').style.display = 'inline-block';
+            }
+            
+            // Vérifier à nouveau le bouton "Nouvelle manche" après tout le chargement
+            // Utiliser setTimeout pour s'assurer que tout est bien chargé
+            setTimeout(() => {
+                checkAndShowNewHandButton();
+            }, 50);
+        }
+
+        function renderGameStatus() {
+            renderPlayersStatus();
+            renderBoardStatus();
+        }
+
+        function renderPlayersStatus() {
+            const playersListEl = document.getElementById('playersStatusList');
+            
+            if (!currentGame || !currentGame.players || currentGame.players.length === 0) {
+                playersListEl.innerHTML = '';
+                return;
+            }
+
+            playersListEl.innerHTML = '';
+            
+            currentGame.players.forEach(player => {
+                // Vérifier si le joueur a enregistré ses cartes pour cette manche
+                const playerData = currentHand && currentHand.playerData && currentHand.playerData[player.id];
+                const hasCards = playerData && playerData.cards && playerData.cards.length === 2;
+                const isCurrentPlayer = player.id === currentPlayer.playerId;
+                
+                const playerBadge = document.createElement('span');
+                playerBadge.className = `player-status-badge ${hasCards ? 'validated' : 'pending'}`;
+                
+                const statusIcon = hasCards ? '✓' : '○';
+                const playerName = isCurrentPlayer ? `${player.pseudo} (vous)` : player.pseudo;
+                
+                playerBadge.innerHTML = `<span>${statusIcon}</span><span>${playerName}</span>`;
+                playersListEl.appendChild(playerBadge);
+            });
+        }
+
+        function renderBoardStatus() {
+            const boardStatusEl = document.getElementById('boardStatus');
+            const boardCardsEl = document.getElementById('boardStatusCards');
+            
+            if (!currentHand || !currentHand.board) {
+                boardStatusEl.style.display = 'none';
+                return;
+            }
+
+            const board = currentHand.board;
+            const allCards = [];
+            
+            if (board.flop && board.flop.length > 0) {
+                allCards.push(...board.flop);
+            }
+            if (board.turn) {
+                allCards.push(board.turn);
+            }
+            if (board.river) {
+                allCards.push(board.river);
+            }
+            
+            if (allCards.length > 0) {
+                boardStatusEl.style.display = 'block';
+                boardCardsEl.innerHTML = '';
+                
+                allCards.forEach(card => {
+                    const cardEl = createCardElement(card);
+                    if (cardEl) {
+                        cardEl.className = (cardEl.className ? cardEl.className + ' ' : '') + 'board-status-card';
+                        boardCardsEl.appendChild(cardEl);
+                    }
+                });
+            } else {
+                boardStatusEl.style.display = 'none';
+            }
+        }
+
+        function renderPlayersInHeader() {
+            const playersEl = document.getElementById('playersInHeader');
+            
+            if (!currentGame || !currentGame.players || currentGame.players.length === 0) {
+                playersEl.textContent = '';
+                return;
+            }
+
+            const playersNames = currentGame.players.map(p => p.pseudo).join(', ');
+            playersEl.textContent = `👥 ${playersNames}`;
+        }
+        
+        // Supprimer une partie (depuis la page de jeu)
+        async function deleteGameFromGamePage() {
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer la partie "${currentPlayer.gameCode}" ?\nCette action est irréversible.`)) {
+                return;
+            }
+            
+            const result = await deleteGame(currentPlayer.gameCode);
+            
+            if (result.success) {
+                showAlert('Partie supprimée avec succès', 'success');
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1500);
+            } else {
+                showAlert(result.error || 'Erreur lors de la suppression', 'error');
+            }
+        }
+
+        function renderHandNavigation() {
+            const handsCount = currentGame.hands.length;
+            const currentHandNum = currentGame.currentHand || 1;
+            const handStatus = currentHand.status === 'finished' ? ' - Terminée' : ' - En cours';
+            
+            document.getElementById('handBadge').textContent = `Manche ${currentHandNum}/${handsCount}`;
+            document.getElementById('handStatus').textContent = handStatus;
+            
+            // Afficher le bouton "Nouvelle manche" si le créateur peut créer une nouvelle manche
+            checkAndShowNewHandButton();
+        }
+        
+        function checkAndShowNewHandButton() {
+            const newHandSection = document.getElementById('newHandSection');
+            const finishGameSection = document.getElementById('finishGameSection');
+            
+            if (!isCreator || !currentGame || currentGame.status === 'finished') {
+                newHandSection.style.display = 'none';
+                if (!isCreator || !currentGame || currentGame.status === 'finished') {
+                    finishGameSection.style.display = 'none';
+                }
+                return;
+            }
+            
+            // Toujours afficher le bouton "Terminer la partie" pour le créateur
+            finishGameSection.style.display = 'flex';
+            
+            if (!currentHand) {
+                newHandSection.style.display = 'none';
+                return;
+            }
+            
+            // Vérifier si le créateur a enregistré ses cartes
+            const playerData = currentHand.playerData && currentHand.playerData[currentPlayer.playerId];
+            const hasCards = playerData && playerData.cards && Array.isArray(playerData.cards) && playerData.cards.length === 2;
+            
+            // Vérifier si le board est enregistré (au moins le flop avec 3 cartes)
+            const board = currentHand.board;
+            const hasBoard = board && board.flop && Array.isArray(board.flop) && board.flop.length >= 3;
+            
+            // Afficher le bouton "Nouvelle manche" si les cartes ET le board sont enregistrés
+            if (hasCards && hasBoard) {
+                newHandSection.style.display = 'flex';
+            } else {
+                newHandSection.style.display = 'none';
+            }
+        }
+
+        function loadPlayerData() {
+            if (!currentGame || !currentHand) return;
+
+            // Charger les données du joueur pour la manche courante
+            const playerData = currentHand.playerData && currentHand.playerData[currentPlayer.playerId];
+            
+            if (playerData && playerData.cards && playerData.cards.length > 0) {
+                // Afficher les cartes dans l'input
+                const cardsText = playerData.cards.map(c => {
+                    const rank = c.rank === 'K' ? 'R' : c.rank === 'Q' ? 'D' : c.rank === 'J' ? 'V' : c.rank;
+                    const suit = c.suit === 'clubs' ? 'T' : c.suit === 'hearts' ? 'C' : c.suit === 'diamonds' ? 'K' : 'P';
+                    return rank + suit;
+                }).join(' ');
+                
+                document.getElementById('cardsInput').value = cardsText;
+                updateCardsPreview(playerData.cards);
+                document.getElementById('saveCardsBtn').textContent = 'Cartes enregistrées ✓';
+                document.getElementById('saveCardsBtn').disabled = true;
+                
+                // Vérifier si on peut afficher le bouton nouvelle manche
+                checkAndShowNewHandButton();
+            }
+        }
+
+        function renderBoardSection() {
+            const boardSection = document.getElementById('boardSection');
+            
+            if (!isCreator) {
+                boardSection.style.display = 'none';
+                return;
+            }
+
+            boardSection.style.display = 'block';
+
+            // Charger le board actuel
+            if (currentHand && currentHand.board) {
+                const board = currentHand.board;
+                
+                if (board.flop && board.flop.length > 0) {
+                    const flopText = board.flop.map(c => formatCardToText(c)).join(' ');
+                    document.getElementById('flopInput').value = flopText;
+                }
+                
+                if (board.turn) {
+                    document.getElementById('turnInput').value = formatCardToText(board.turn);
+                }
+                
+                if (board.river) {
+                    document.getElementById('riverInput').value = formatCardToText(board.river);
+                }
+                
+                updateBoardPreview();
+                
+                // Vérifier si on peut afficher le bouton nouvelle manche après le rendu du board
+                checkAndShowNewHandButton();
+            }
+        }
+
+        function formatCardToText(card) {
+            if (!card || !card.rank || !card.suit) return '';
+            
+            const rankMap = {
+                'K': 'R', 'Q': 'D', 'J': 'V', 'A': 'A'
+            };
+            const rank = rankMap[card.rank] || card.rank;
+            
+            const suitMap = {
+                'clubs': 'T', 'hearts': 'C', 'diamonds': 'K', 'spades': 'P'
+            };
+            const suit = suitMap[card.suit] || '';
+            
+            return rank + suit;
+        }
+
+        function updateCardsPreview(cards) {
+            const preview = document.getElementById('cardsPreview');
+            preview.innerHTML = '';
+            
+            if (!cards || cards.length === 0) {
+                preview.style.display = 'none';
+                return;
+            }
+            
+            preview.style.display = 'flex';
+            cards.forEach(card => {
+                const cardEl = createCardElement(card);
+                if (cardEl) {
+                    cardEl.className = (cardEl.className ? cardEl.className + ' ' : '') + 'preview-card';
+                    preview.appendChild(cardEl);
+                }
+            });
+        }
+
+        function updateBoardPreview() {
+            const preview = document.getElementById('boardPreview');
+            preview.innerHTML = '';
+            
+            if (!currentHand || !currentHand.board) return;
+            
+            const board = currentHand.board;
+            const allCards = [];
+            
+            if (board.flop && board.flop.length > 0) {
+                allCards.push(...board.flop);
+            }
+            if (board.turn) {
+                allCards.push(board.turn);
+            }
+            if (board.river) {
+                allCards.push(board.river);
+            }
+            
+            if (allCards.length > 0) {
+                preview.style.display = 'flex';
+                allCards.forEach(card => {
+                    const cardEl = createCardElement(card);
+                    if (cardEl) {
+                        cardEl.className = (cardEl.className ? cardEl.className + ' ' : '') + 'preview-card';
+                        preview.appendChild(cardEl);
+                    }
+                });
+            }
+        }
+
+        // Sauvegarder les cartes
+        document.getElementById('saveCardsBtn').addEventListener('click', async function() {
+            const cardsText = document.getElementById('cardsInput').value.trim();
+            
+            if (!cardsText) {
+                showAlert('Veuillez entrer vos cartes', 'error');
+                return;
+            }
+
+            const cards = parseCardsText(cardsText);
+            
+            if (cards.length !== 2) {
+                showAlert('Vous devez entrer exactement 2 cartes', 'error');
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Enregistrement...';
+
+            const result = await savePlayerCards(currentPlayer.gameCode, currentPlayer.playerId, cards);
+
+            if (result.success) {
+                showAlert('Cartes enregistrées !', 'success');
+                updateCardsPreview(cards);
+                this.textContent = 'Cartes enregistrées ✓';
+                
+                // Recharger le jeu pour mettre à jour l'état
+                await loadGame();
+                
+                // Mettre à jour l'affichage des joueurs et du board
+                renderGameStatus();
+                
+                // Vérifier si on peut afficher le bouton nouvelle manche
+                checkAndShowNewHandButton();
+            } else {
+                showAlert('Erreur lors de l\'enregistrement', 'error');
+                this.disabled = false;
+                this.textContent = 'Valider mes cartes';
+            }
+        });
+
+        // Sauvegarder le board (créateur uniquement)
+        document.getElementById('saveBoardBtn').addEventListener('click', async function() {
+            if (!isCreator) return;
+
+            const flopText = document.getElementById('flopInput').value.trim();
+            const turnText = document.getElementById('turnInput').value.trim();
+            const riverText = document.getElementById('riverInput').value.trim();
+
+            const flop = parseCardsText(flopText);
+            
+            if (flop.length !== 3 && flopText) {
+                showAlert('Le flop doit contenir 3 cartes', 'error');
+                return;
+            }
+
+            let turn = null;
+            let river = null;
+
+            if (turnText) {
+                const turnCards = parseCardsText(turnText);
+                if (turnCards.length !== 1) {
+                    showAlert('Le turn doit contenir 1 carte', 'error');
+                    return;
+                }
+                turn = turnCards[0];
+            }
+
+            if (riverText) {
+                const riverCards = parseCardsText(riverText);
+                if (riverCards.length !== 1) {
+                    showAlert('La river doit contenir 1 carte', 'error');
+                    return;
+                }
+                river = riverCards[0];
+            }
+
+            this.disabled = true;
+            this.textContent = 'Enregistrement...';
+
+            const boardData = {
+                flop: flop,
+                turn: turn,
+                river: river
+            };
+
+            const currentHandNum = currentGame.currentHand || 1;
+            const result = await updateBoardForHand(currentPlayer.gameCode, currentHandNum, boardData);
+
+            if (result.success) {
+                showAlert('Board enregistré !', 'success');
+                updateBoardPreview();
+                this.textContent = 'Board enregistré ✓';
+                
+                // Recharger le jeu pour mettre à jour l'état
+                await loadGame();
+                
+                // Mettre à jour l'affichage des joueurs et du board
+                renderGameStatus();
+                
+                // Attendre un peu pour que currentHand soit bien mis à jour
+                setTimeout(() => {
+                    checkAndShowNewHandButton();
+                }, 100);
+            } else {
+                showAlert('Erreur lors de l\'enregistrement', 'error');
+                this.disabled = false;
+                this.textContent = 'Enregistrer le board';
+            }
+        });
+
+        // Créer une nouvelle manche
+        document.getElementById('newHandBtn').addEventListener('click', async function() {
+            if (!confirm('Voulez-vous commencer une nouvelle manche ?')) {
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Création...';
+
+            const result = await startNewHand(currentPlayer.gameCode);
+
+            if (result.success) {
+                showAlert('Nouvelle manche créée !', 'success');
+                
+                // Réinitialiser les inputs
+                document.getElementById('cardsInput').value = '';
+                document.getElementById('flopInput').value = '';
+                document.getElementById('turnInput').value = '';
+                document.getElementById('riverInput').value = '';
+                document.getElementById('saveCardsBtn').textContent = 'Valider mes cartes';
+                document.getElementById('saveCardsBtn').disabled = false;
+                document.getElementById('cardsPreview').innerHTML = '';
+                document.getElementById('boardPreview').innerHTML = '';
+                document.getElementById('newHandSection').style.display = 'none';
+                
+                await loadGame();
+            } else {
+                showAlert('Erreur lors de la création de la manche', 'error');
+                this.disabled = false;
+                this.textContent = 'Nouvelle manche';
+            }
+        });
+
+        // Terminer la partie
+        document.getElementById('finishGameBtn').addEventListener('click', async function() {
+            if (!confirm('Êtes-vous sûr de vouloir terminer la partie ?')) {
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Terminaison...';
+
+            const result = await finishGame(currentPlayer.gameCode);
+
+            if (result.success) {
+                showAlert('Partie terminée !', 'success');
+                
+                // Cacher les boutons
+                document.getElementById('newHandSection').style.display = 'none';
+                document.getElementById('finishGameSection').style.display = 'none';
+                
+                // Afficher un lien vers le récapitulatif
+                setTimeout(() => {
+                    window.location.href = 'review.html';
+                }, 1500);
+            } else {
+                showAlert('Erreur lors de la terminaison', 'error');
+                this.disabled = false;
+                this.textContent = 'Terminer la partie';
+            }
+        });
+
+        // Prévisualiser les cartes en temps réel
+        document.getElementById('cardsInput').addEventListener('input', function() {
+            const cards = parseCardsText(this.value);
+            updateCardsPreview(cards);
+        });
+
+        // Initialiser au chargement
+        init();
+    </script>
+</body>
+</html>

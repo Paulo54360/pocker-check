@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Check - Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="logo">🃏 Poker Check</h1>
+            <p class="subtitle">Notez, analysez et améliorez vos parties de poker</p>
+        </header>
+
+        <main class="main-content">
+            <!-- Zone utilisateur -->
+            <div id="userZone" class="user-zone" style="display: none;">
+                <div class="user-info">
+                    <span id="userPseudo" class="user-pseudo"></span>
+                    <button class="btn btn-secondary" id="logoutBtn" style="width: auto; padding: 8px 15px; margin: 0;">Déconnexion</button>
+                </div>
+            </div>
+
+            <!-- Zone de connexion -->
+            <div id="loginZone" class="login-zone">
+                <div class="form-container">
+                    <h2 style="color: var(--primary-green); margin-bottom: 20px; text-align: center;">Bienvenue !</h2>
+                    <p style="text-align: center; color: var(--text-light); margin-bottom: 25px;">
+                        Créez votre pseudo pour commencer à jouer
+                    </p>
+                    <div class="form-group">
+                        <label for="loginPseudo">Votre pseudo</label>
+                        <input type="text" id="loginPseudo" placeholder="Ex: PokerMaster" maxlength="20" required>
+                        <small id="pseudoError" style="color: var(--card-red); display: none;"></small>
+                    </div>
+                    <button class="btn" id="loginBtn">Se connecter</button>
+                </div>
+            </div>
+
+            <!-- Dashboard avec historique -->
+            <div id="dashboardZone" style="display: none;">
+                <!-- Actions rapides -->
+                <div class="actions-grid" style="margin-bottom: 30px;">
+                    <a href="create.html" class="action-card create-card">
+                        <div class="card-icon">✨</div>
+                        <h3>Créer une partie</h3>
+                        <p>Générez un code unique et partagez-le avec vos amis</p>
+                    </a>
+
+                    <a href="join.html" class="action-card join-card">
+                        <div class="card-icon">🚪</div>
+                        <h3>Rejoindre une partie</h3>
+                        <p>Entrez le code de la partie pour y participer</p>
+                    </a>
+                </div>
+
+                <!-- Historique des parties -->
+                <div class="games-history-section">
+                    <h2 style="color: var(--primary-green); margin-bottom: 20px;">Mes parties</h2>
+                    <div id="gamesList" class="games-list">
+                        <p style="color: var(--text-light); text-align: center; padding: 40px;">
+                            Aucune partie pour le moment. Créez ou rejoignez une partie pour commencer !
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>Une app simple pour les amateurs de poker</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        let currentUser = null;
+
+        // Initialisation
+        async function init() {
+            // Synchroniser les parties depuis JSONBin au démarrage (cela crée aussi le bin si nécessaire)
+            await syncGamesFromJSONBin();
+            
+            currentUser = getCurrentUser();
+            
+            if (currentUser) {
+                showDashboard();
+            } else {
+                showLogin();
+            }
+        }
+
+        function showLogin() {
+            document.getElementById('loginZone').style.display = 'block';
+            document.getElementById('dashboardZone').style.display = 'none';
+            document.getElementById('userZone').style.display = 'none';
+        }
+
+        function showDashboard() {
+            document.getElementById('loginZone').style.display = 'none';
+            document.getElementById('dashboardZone').style.display = 'block';
+            document.getElementById('userZone').style.display = 'block';
+            
+            document.getElementById('userPseudo').textContent = currentUser.pseudo;
+            loadUserGames();
+        }
+
+        // Connexion
+        document.getElementById('loginBtn').addEventListener('click', async function() {
+            const pseudo = document.getElementById('loginPseudo').value.trim();
+            const errorEl = document.getElementById('pseudoError');
+            
+            errorEl.style.display = 'none';
+            
+            if (!pseudo) {
+                errorEl.textContent = 'Veuillez entrer un pseudo';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            if (pseudo.length < 2) {
+                errorEl.textContent = 'Le pseudo doit faire au moins 2 caractères';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Connexion...';
+
+            // Vérifier si le pseudo existe déjà
+            if (pseudoExists(pseudo)) {
+                // Récupérer l'utilisateur existant
+                const existingUser = getUserByPseudo(pseudo);
+                if (existingUser) {
+                    setCurrentUser(existingUser.userId);
+                    currentUser = existingUser;
+                    showDashboard();
+                    return;
+                } else {
+                    errorEl.textContent = 'Ce pseudo est déjà utilisé mais introuvable. Veuillez en choisir un autre.';
+                    errorEl.style.display = 'block';
+                    this.disabled = false;
+                    this.textContent = 'Se connecter';
+                    return;
+                }
+            }
+
+            // Créer un nouvel utilisateur
+            const result = createOrGetUser(pseudo);
+            
+            if (result.success) {
+                setCurrentUser(result.user.userId);
+                currentUser = result.user;
+                showDashboard();
+            } else {
+                errorEl.textContent = result.error || 'Erreur lors de la connexion';
+                errorEl.style.display = 'block';
+                this.disabled = false;
+                this.textContent = 'Se connecter';
+            }
+        });
+
+        // Déconnexion
+        document.getElementById('logoutBtn').addEventListener('click', function() {
+            if (confirm('Voulez-vous vraiment vous déconnecter ?')) {
+                localStorage.removeItem('current_user');
+                clearCurrentPlayer();
+                currentUser = null;
+                showLogin();
+                document.getElementById('loginPseudo').value = '';
+            }
+        });
+
+        // Charger les parties de l'utilisateur
+        async function loadUserGames() {
+            if (!currentUser) return;
+
+            const games = getUserGames(currentUser.userId);
+            const gamesList = document.getElementById('gamesList');
+            
+            if (games.length === 0) {
+                gamesList.innerHTML = '<p style="color: var(--text-light); text-align: center; padding: 40px;">Aucune partie pour le moment. Créez ou rejoignez une partie pour commencer !</p>';
+                return;
+            }
+
+            gamesList.innerHTML = '';
+            
+            games.forEach(game => {
+                const gameCard = createGameCard(game);
+                gamesList.appendChild(gameCard);
+            });
+        }
+
+        function createGameCard(game) {
+            const card = document.createElement('div');
+            card.className = 'game-card';
+            
+            const handsCount = game.hands ? game.hands.length : 1;
+            const playersCount = game.players ? game.players.length : 0;
+            const isFinished = game.status === 'finished';
+            const isCreator = game.creatorId === currentUser.userId;
+            
+            card.innerHTML = `
+                <div class="game-card-header">
+                    <div class="game-card-code">${game.gameCode}</div>
+                    <span class="game-card-status ${isFinished ? 'finished' : 'playing'}">
+                        ${isFinished ? 'Terminée' : 'En cours'}
+                    </span>
+                </div>
+                <div class="game-card-info">
+                    <div class="game-card-meta">
+                        <span>📅 ${formatDate(game.createdAt)}</span>
+                        <span>🎯 ${handsCount} manche${handsCount > 1 ? 's' : ''}</span>
+                        <span>👥 ${playersCount} joueur${playersCount > 1 ? 's' : ''}</span>
+                    </div>
+                    ${isCreator ? '<div class="game-card-badge creator">Créateur</div>' : ''}
+                </div>
+                <div class="game-card-actions">
+                    ${isFinished ? 
+                        `<button class="btn btn-secondary" onclick="viewGame('${game.gameCode}')">Voir récapitulatif</button>` :
+                        `<button class="btn" onclick="continueGame('${game.gameCode}')">Continuer</button>`
+                    }
+                    ${isCreator ? 
+                        `<button class="btn btn-danger" onclick="deleteGameFromDashboard('${game.gameCode}')" style="margin-top: 10px; width: 100%;">🗑️ Supprimer</button>` : 
+                        ''
+                    }
+                </div>
+            `;
+            
+            return card;
+        }
+
+        // Continuer une partie
+        function continueGame(gameCode) {
+            // Trouver le playerId de l'utilisateur dans cette partie
+            const game = getLocalGame(gameCode);
+            if (!game) {
+                showAlert('Partie introuvable', 'error');
+                return;
+            }
+
+            const player = game.players.find(p => p.userId === currentUser.userId);
+            if (!player) {
+                showAlert('Vous ne participez pas à cette partie', 'error');
+                return;
+            }
+
+            saveCurrentPlayer(gameCode, player.id, currentUser.pseudo);
+            window.location.href = 'game.html';
+        }
+
+        // Voir le récapitulatif
+        function viewGame(gameCode) {
+            const game = getLocalGame(gameCode);
+            if (!game) {
+                showAlert('Partie introuvable', 'error');
+                return;
+            }
+
+            const player = game.players.find(p => p.userId === currentUser.userId);
+            if (player) {
+                saveCurrentPlayer(gameCode, player.id, currentUser.pseudo);
+            }
+            
+            window.location.href = 'review.html';
+        }
+
+        // Supprimer une partie (depuis le dashboard)
+        async function deleteGameFromDashboard(gameCode) {
+            const game = getLocalGame(gameCode);
+            if (!game) {
+                showAlert('Partie introuvable', 'error');
+                return;
+            }
+
+            if (game.creatorId !== currentUser.userId) {
+                showAlert('Vous n\'êtes pas le créateur de cette partie', 'error');
+                return;
+            }
+
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer la partie "${gameCode}" ?\nCette action est irréversible.`)) {
+                return;
+            }
+
+            const result = await deleteGame(gameCode);
+
+            if (result.success) {
+                showAlert('Partie supprimée avec succès', 'success');
+                // Recharger la liste des parties
+                await loadUserGames();
+            } else {
+                showAlert(result.error || 'Erreur lors de la suppression', 'error');
+            }
+        }
+
+        // Permettre de valider avec Entrée
+        document.getElementById('loginPseudo').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('loginBtn').click();
+            }
+        });
+
+        // Initialiser au chargement
+        init();
+    </script>
+</body>
+</html>
